@@ -26,8 +26,9 @@
 // Please maintain this license information along with authorship
 // and copyright notices in any redistribution of this code
 // **********************************************************************************
-//#define WEATHERSHIELD            //uncomment if WeatherShield is present to report temp/humidity/pressure periodically
-//#define WEATHERSENDDELAY  300000 // send WeatherShield data every so often (ms)
+#define WEATHERSHIELD            //uncomment if WeatherShield is present to report temp/humidity/pressure periodically
+#define WEATHERSENDDELAY  300000 // send WeatherShield data every so often (ms)
+//#define WEATHERSENDDELAY  60000 // send WeatherShield data every so often (ms)
 // ***************************************************************************************************************************
 #include <RFM69.h>         //get it here: https://github.com/lowpowerlab/rfm69
 #include <RFM69_ATC.h>     //get it here: https://github.com/lowpowerlab/RFM69
@@ -46,6 +47,7 @@
 #define GATEWAYID   1
 #define NODEID      2
 #define NETWORKID   100
+
 #define FREQUENCY     RF69_433MHZ
 //#define FREQUENCY     RF69_868MHZ
 //#define FREQUENCY       RF69_915MHZ //Match this with the version of your Moteino! (others: RF69_433MHZ, RF69_868MHZ)
@@ -83,8 +85,8 @@
 
 #define LED                  9   //pin connected to onboard LED
 #define LED_PULSE_PERIOD  5000   //5s seems good value for pulsing/blinking (not too fast/slow)
-#define SERIAL_BAUD       9600
-//#define SERIAL_EN                //comment out if you don't want any serial output
+#define SERIAL_BAUD       19200
+#define SERIAL_EN                //comment out if you don't want any serial output
 
 #ifdef SERIAL_EN
   #define DEBUG(input)   {Serial.print(input); delay(1);}
@@ -124,15 +126,6 @@ SPIFlash flash(8, 0xEF30); //WINDBOND 4MBIT flash chip on CS pin D8 (default for
   RFM69 radio;
 #endif
 
-#include "DHT.h"
-#define DHT_PIN 3
-#define DHT_TYPE DHT22
-
-DHT dht(DHT_PIN, DHT_TYPE);
-
-#define DHT_INSTALLED
-#define DHT_SEND_INTERVAL 30000
-
 void setup(void)
 {
 #ifdef SERIAL_EN
@@ -154,10 +147,6 @@ void setup(void)
 
 #ifdef ENABLE_ATC
   radio.enableAutoPower(ATC_RSSI);
-#endif
-
-#ifdef DHT_INSTALLED
-  dht.begin();
 #endif
 
   char buff[50];
@@ -334,21 +323,6 @@ void loop()
     }
   }
 
-#ifdef DHT_INSTALLED
-  if (millis()-lastWeatherSent > DHT_SEND_INTERVAL)
-  {
-	    lastWeatherSent = millis();
-	    F = dht.readTemperature(true, true);
-	    if (F != NAN) {
-			dtostrf(F, 3,2, Fstr);
-			sprintf(sendBuf, "F:%s", Fstr);
-//			DEBUGln(sendBuf);
-			byte sendLen = strlen(sendBuf);
-			radio.send(GATEWAYID, sendBuf, sendLen);
-	    }
-  }
-#endif
-
 #ifdef WEATHERSHIELD
   if (millis()-lastWeatherSent > WEATHERSENDDELAY)
   {
@@ -358,8 +332,10 @@ void loop()
     F = bme280.readTempF();
     H = bme280.readFloatHumidity();
 
-    dtostrf(F, 3,2, Fstr);
-    dtostrf(H, 3,2, Hstr);
+//    dtostrf(F, 3,2, Fstr);
+//    dtostrf(H, 3,2, Hstr);
+    dtostrf(F, 3,1, Fstr);
+    dtostrf(H, 3,1, Hstr);
     dtostrf(P, 3,2, Pstr);
 
     sprintf(sendBuf, "F:%s H:%s P:%s", Fstr, Hstr, Pstr);
@@ -385,16 +361,22 @@ void setStatus(byte newSTATUS, boolean reportIt)
   if (STATUS != newSTATUS) lastStatusTimestamp = millis();
   STATUS = newSTATUS;
   DEBUGln(STATUS==STATUS_CLOSED ? "CLOSED" : STATUS==STATUS_CLOSING ? "CLOSING" : STATUS==STATUS_OPENING ? "OPENING" : STATUS==STATUS_OPEN ? "OPEN" : "UNKNOWN");
-  if (reportIt)
-    reportStatus();
+  if (reportIt) {
+	  reportStatus();
+  }
 }
 
 void reportStatus(void)
 {
   char buff[10];
+  char msg[25];
   sprintf(buff, STATUS==STATUS_CLOSED ? "CLOSED" : STATUS==STATUS_CLOSING ? "CLOSING" : STATUS==STATUS_OPENING ? "OPENING" : STATUS==STATUS_OPEN ? "OPEN" : "UNKNOWN");
+  sprintf(msg, "REPORT STATUS: %s", buff);
+  DEBUGln(msg);
   byte len = strlen(buff);
-  radio.sendWithRetry(GATEWAYID, buff, len);
+  const int retries = 3;
+  const int wait_ms = 1000;
+  radio.sendWithRetry(GATEWAYID, buff, len, 3, 50);
 }
 
 void pulseRelay()
